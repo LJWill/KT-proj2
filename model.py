@@ -14,25 +14,34 @@ from sklearn import ensemble
 from sklearn import metrics
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 
-
+# for tunning hyperparameters
 is_tunning_mode = True
-is_predicting_mode = False
 
+# for predicting test data set
+is_predicting_mode = True
 
 class Model:
 
-    train_set = pd.read_csv('./data/train.csv')
+    train_set   = pd.read_csv('./data/train.csv')
     train_label = pd.read_csv('./data/train-labels.txt', sep="\t", header=None)
-    eval_set = pd.read_csv('./data/eval.csv')
-    eval_label = pd.read_csv('./data/eval-labels.txt', sep="\t", header=None)
+    eval_set    = pd.read_csv('./data/eval.csv')
+    eval_label  = pd.read_csv('./data/eval-labels.txt', sep="\t", header=None)
+    test_set    = pd.read_csv('./data/test.csv')
+    test_tweets = pd.read_csv('./data/test-tweets.txt', sep="\t", header=None)
+
 
     def naive_bayes(self, X=train_set, y=train_label[1]):
         clf_model = naive_bayes.MultinomialNB(alpha=1.0, class_prior=None, fit_prior=True)
         # clf_model = naive_bayes.GaussianNB()
 
-        eval_pred = clf_model.fit(X, y).predict(self.eval_set)
-
-        self.output_result(eval_pred)
+        if is_predicting_mode:
+            test_pred = clf_model.fit(X, y).predict(self.test_set)
+            with open('./test_labels_bayes.txt', 'w') as f:
+                for (id, label) in zip(self.test_tweets[0], test_pred):
+                    f.write(str(id) + '\t' + str(label) + '\r\n')
+        else:
+            eval_pred = clf_model.fit(X, y).predict(self.eval_set)
+            self.output_result(eval_pred)
 
     def svm(self, X=train_set, y=train_label[1]):
         if is_tunning_mode:
@@ -132,7 +141,7 @@ class Model:
         if is_tunning_mode:
             n_neighbors = list(range(1,15))
             weight_options = ['uniform','distance']
-            metric = ['euclidean', 'manhatan']
+            metric = ['euclidean', 'manhattan']
             algorithm = ['auto', 'ball_tree', 'kd_tree', 'brute']
 
             param_grid ={
@@ -193,6 +202,8 @@ class Model:
             self.eval_set.drop('id', axis = 1, inplace = True)
             self.eval_label.drop(0, axis = 1, inplace = True)
 
+
+        self.test_set.drop('id', axis = 1, inplace = True)
 
     def data_analysis(self, label_list):
         no_positive = 0
