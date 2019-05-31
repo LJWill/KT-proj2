@@ -3,6 +3,7 @@ import sys
 import time
 import numpy as np
 import pandas as pd
+import nltk
 import matplotlib.pyplot as plt
 from sklearn import naive_bayes
 from sklearn import svm
@@ -13,12 +14,15 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn import ensemble
 from sklearn import metrics
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+from nltk.corpus import stopwords
+
+
 
 # for tunning hyperparameters
-is_tunning_mode = True
+is_tunning_mode = False
 
-# for predicting test data set
-is_predicting_mode = True
+# for predicting test set
+is_predicting_mode = False
 
 class Model:
 
@@ -26,35 +30,31 @@ class Model:
     train_label = pd.read_csv('./data/train-labels.txt', sep="\t", header=None)
     eval_set    = pd.read_csv('./data/eval.csv')
     eval_label  = pd.read_csv('./data/eval-labels.txt', sep="\t", header=None)
-    test_set    = pd.read_csv('./data/test.csv')
-    test_tweets = pd.read_csv('./data/test-tweets.txt', sep="\t", header=None)
-
 
     def naive_bayes(self, X=train_set, y=train_label[1]):
         clf_model = naive_bayes.MultinomialNB(alpha=1.0, class_prior=None, fit_prior=True)
         # clf_model = naive_bayes.GaussianNB()
 
-        if is_predicting_mode:
-            test_pred = clf_model.fit(X, y).predict(self.test_set)
-            with open('./test_labels_bayes.txt', 'w') as f:
-                for (id, label) in zip(self.test_tweets[0], test_pred):
-                    f.write(str(id) + '\t' + str(label) + '\r\n')
-        else:
-            eval_pred = clf_model.fit(X, y).predict(self.eval_set)
-            self.output_result(eval_pred)
+        eval_pred = clf_model.fit(X, y).predict(self.eval_set)
+        self.output_result(eval_pred, 'Naive Bayes')
+
+        return clf_model.fit(X,y)
+
+
 
     def svm(self, X=train_set, y=train_label[1]):
         if is_tunning_mode:
             cs = [0.001, 0.10, 0.1, 10, 25, 50, 100, 1000]
             gammas = [0.01, 0.1, 1, 2, 3, 'auto']
-            param_grid = {
+            rand_param_grid = {
                 'kernel':('linear', 'rbf'), 
                 'C': cs,'gamma': gammas,
                 'decision_function_shape':('ovo','ovr'),
                 'shrinking':(True,False)
             }
             
-            grid = GridSearchCV(svm.SVC(C=1, verbose=True), param_grid, cv=10, scoring='accuracy')
+            grid = RandomizedSearchCV(svm.SVC(), rand_param_grid, 
+                   n_iter = 100, cv = 5, verbose=2, n_jobs = -1, scoring='accuracy')
             grid.fit(X, y)
             grid.grid_scores_
 
@@ -65,7 +65,9 @@ class Model:
         else:
             clf_model = svm.SVC()
             eval_pred = clf_model.fit(X, y).predict(self.eval_set)
-            self.output_result(eval_pred)
+            self.output_result(eval_pred, 'SVM')
+
+            return clf_model.fit(X,y)
 
 
     def decision_tree(self, X=train_set, y=train_label[1]):
@@ -94,9 +96,11 @@ class Model:
             print(grid.best_score_)   # 0.5470918345151607
 
         else:
-            clf_model = tree.DecisionTreeClassifier(random_state=0, max_depth=11, min_samples_split=5, min_samples_leaf=1)
+            clf_model = tree.DecisionTreeClassifier(max_depth=11, criterion='gini', min_samples_leaf=1, min_samples_split=5)
             eval_pred = clf_model.fit(X, y).predict(self.eval_set)
-            self.output_result(eval_pred)
+            self.output_result(eval_pred, 'Decision Tree')
+
+            return clf_model.fit(X,y)
 
 
     def random_forest(self, X=train_set, y=train_label[1]):
@@ -127,13 +131,17 @@ class Model:
 
             grid.fit(X, y)
 
-            print(grid.best_params_)  
-            print(grid.best_score_)   
+            print(grid.best_params_)  # {'n_estimators': 195, 'min_samples_split': 5, 'min_samples_leaf': 4, 
+                                      #  'max_depth': 42, 'criterion': 'entropy', 'bootstrap': True}
+            print(grid.best_score_)   # 0.5552268673598121
 
         else:
-            clf_model =  RandomForestClassifier(n_estimators=100, criterion='gini', max_depth=15, random_state=0)
+            clf_model =  RandomForestClassifier(n_estimators=195, min_samples_split=5, min_samples_leaf=4, 
+                                               max_depth=42, criterion='entropy', bootstrap=True)
             eval_pred = clf_model.fit(X, y).predict(self.eval_set)
-            self.output_result(eval_pred)
+            self.output_result(eval_pred, 'Random Forest')
+
+            return clf_model.fit(X,y)
 
 
 
@@ -155,29 +163,35 @@ class Model:
 
             grid.fit(X, y)
 
-            print(grid.best_params_)  
-            print(grid.best_score_)  
+            print(grid.best_params_)  # {'algorithm': 'ball_tree', 'metric': 'euclidean', 'n_neighbors': 13, 'weights': 'uniform'}
+            print(grid.best_score_)   # 0.5132031148040197
 
         else:
-            clf_model = KNeighborsClassifier(n_neighbors = 3, algorithm="auto", leaf_size=30)
+            clf_model = KNeighborsClassifier(n_neighbors = 13, algorithm="ball_tree", metric="euclidean", weights="uniform")
             eval_pred = clf_model.fit(X, y).predict(self.eval_set)
-            self.output_result(eval_pred)
+            self.output_result(eval_pred, 'KNN')
+
+            return clf_model.fit(X,y)
 
 
 
 
 
-    def output_result(self, eval_pred):
-        target_names = ['negative', 'neutral', 'positive']
-        result = classification_report(self.eval_label[1], eval_pred, target_names=target_names)
+    def output_result(self, eval_pred, method_name):
+        if is_predicting_mode:
+            pass
+        else:
+            target_names = ['negative', 'neutral', 'positive']
+            result = classification_report(self.eval_label[1], eval_pred, target_names=target_names)
+            print('*****************************************************************')
+            print(method_name + ': \n')
+            print(result)
 
-        print(result)
+            no_correct = (eval_pred == self.eval_label[1]).sum()
+            percent = no_correct / len(self.eval_label)
 
-        no_correct = (eval_pred == self.eval_label[1]).sum()
-        percent = no_correct / len(self.eval_label)
-
-        print('Number of correct predict: ', no_correct, 'Percentage: ', percent, '\n')
-
+            print('Number of correct predict: ', no_correct, 'Accuracy: ', percent, '\n')
+            print('*****************************************************************')
 
     def is_id_match(self, list1, list2):
         if len(list1) != len(list2): return False
@@ -202,8 +216,6 @@ class Model:
             self.eval_set.drop('id', axis = 1, inplace = True)
             self.eval_label.drop(0, axis = 1, inplace = True)
 
-
-        self.test_set.drop('id', axis = 1, inplace = True)
 
     def data_analysis(self, label_list):
         no_positive = 0
